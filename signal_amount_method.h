@@ -1,3 +1,8 @@
+/*
+* @brief Function computing distance<br>
+* by counting amount of signal 
+* 
+*/
 void signal_amount()
 {
   Serial.begin(115200);
