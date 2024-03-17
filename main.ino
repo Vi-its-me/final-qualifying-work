@@ -17,8 +17,6 @@
   };
   sendClass send_instance;
   // sendClass sendClasses_array[1] = {send_instance};
-// #endif // RECEIVE || TRANSMIT
-// #ifdef TRANSMIT
   // Функция для обратной связи, отправлено ли сообщение
   void OnDataSent (uint8_t *mac_address, uint8_t sendStatus)
   {
@@ -27,8 +25,6 @@
       Serial.println("Message sent");
     else Serial.println("Message not sent");
   }
-// #endif // TRANSMIT
-// #ifdef RECEIVE
   void OnDataRecv(uint8_t *mac_address, uint8_t *incomingData, uint8_t length)
   {
     // Функция стандартной библиотеки C, копирующая содержимое одной области
@@ -37,14 +33,6 @@
     // sendClasses_array[0].id = send_instance.id;
   }
 #endif // RECEIVE || TRANSMIT
-// Будет принимать пакеты, пока идет delay()
-#ifdef TRANSMIT
-  yield()
-  {
-    esp_now_set_self_role(ESP_NOW_ROLE_SLAVE);
-    esp_now_register_recv_cb(OnDataRecv);
-    
-  }
 void setup()
 {
   Serial.begin(115200);
@@ -55,7 +43,7 @@ void setup()
   #ifdef AMOUNT
     signal_amount();
   #endif // AMOUNT
-  #if defined TRANSMIT || defined RECEIVE
+  #if defined RECEIVE || defined TRANSMIT
     // Инициализируем модули приема-передачи
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
@@ -65,23 +53,24 @@ void setup()
       return;
     }
   #endif // RECEIVE || TRANSMIT
+  #ifdef RECEIVE
+    esp_now_set_self_role(ESP_NOW_ROLE_SLAVE);
+    esp_now_register_recv_cb(OnDataRecv);
+  #endif // RECEIVE
+}
+void loop() 
+{
   #ifdef TRANSMIT
+    // Распараллеливание для отправки данных(отправляет масив единичек 
+    // на 2 модуль)
+
+    // Инициализируем 1 модуль как отправляющий
     esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
     // Как только ESPNow инициализируется, мы зарегистрируем Send CB
     // для получения статуса переданного пакета 
     esp_now_register_send_cb(OnDataSent);
     // Регистрируем пир
     esp_now_add_peer(MAC_2, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
-  #endif // TRANSMIT
-  #ifdef RECEIVE
-    esp_now_set_self_role(ESP_NOW_ROLE_SLAVE);
-    esp_now_register_recv_cb(OnDataRecv);
-  #endif // RECEIVE
-}
-
-void loop() 
-{
-  #ifdef TRANSMIT
     // Отправляем поочереди каждый из элементов массива на второй модуль
     for(int i = 0; i < 10; i++)
     {
@@ -92,9 +81,10 @@ void loop()
       send_instance.received_packets_number++;
       esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
     }
-    // Во время задержки инициализируем модуль 1 как принимающий
-    // и получаем пакеты, пока она идет
-    delay(3000);
+    //Распараллеливание через millis() для приема данных(если 0 меняется на 2,
+    // то фиксирует время и "выкидывает" в монитор данные об 
+    // изменившейся переменной)
+
   #endif // TRANSMIT
   #ifdef RECEIVE
     // Печатаем в порт Serial каждый элемент из массива и общую сумму принятых п-ов
