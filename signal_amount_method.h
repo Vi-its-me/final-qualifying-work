@@ -1,8 +1,3 @@
-/*
-* @brief Function computing distance<br>
-* by counting amount of signal 
-* 
-*/
 void signal_amount()
 {
   Serial.begin(115200);
@@ -17,7 +12,8 @@ void signal_amount()
     {
       if (WiFi.SSID(i) == "realme C30")
       { 
-        Serial.printf("Take %d| \tSignal amount of \"%s\" = %ddB\mW", counter, WiFi.SSID(i), WiFi.RSSI(i));
+        Serial.printf("Take %d| \tSignal amount of \"%s\" = %ddB\mW", counter, 
+        WiFi.SSID(i), WiFi.RSSI(i));
         is_found = true; 
         counter++;
       }
