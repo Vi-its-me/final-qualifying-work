@@ -1,7 +1,7 @@
 #include <ESP8266WiFi.h>
 #include <espnow.h>
 #include "signal_amount_method.h" //#include "time_count_method.h"
-#define TRANSMIT // MAC || AMOUNT || RECEIVE || TRANSMIT
+#define RECEIVE // MAC || AMOUNT || RECEIVE || TRANSMIT
 
 #if defined RECEIVE || defined TRANSMIT
   //Переменные для обеспечения "распараллеливания" в loop()
@@ -15,6 +15,7 @@
   {
   public:
     int to_second_point_packets_array[10] = {0,0,0,0,0,0,0,0,0,0};
+    int last_array_condition[10] = {0,0,0,0,0,0,0,0,0,0};
     int received_packets_number = 0;
     int processing_time[10] = {0,0,0,0,0,0,0,0,0,0};
   };
@@ -35,6 +36,14 @@
     memcpy(&send_instance, incomingData, sizeof(send_instance));
     // sendClasses_array[0].id = send_instance.id;
   }
+void save_array_condition()
+{
+  // если мы изменили массив, то после отправки 
+  // фиксируем прошлое состояние таким же
+  for(int i = 0; i < 10; i++)
+    send_instance.last_array_condition[i] 
+    = send_instance.to_second_point_packets_array[i];
+}
 #endif // RECEIVE || TRANSMIT
 void setup()
 {
@@ -63,8 +72,67 @@ void setup()
 void loop() 
 {
   #ifdef TRANSMIT
-    // Распараллеливание для отправки данных(отправляет масив единичек 
+    // Распараллеливание для отправки данных(отправляет массив единичек 
     // на 2 модуль)
+    for(int i = 0; i < 10; i++)
+    {
+      if(send_instance.to_second_point_packets_array[i] != 
+      send_instance.last_array_condition[i])
+      {
+        // Инициализируем 1 модуль как отправляющий
+        esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+        // Как только ESPNow инициализируется, мы зарегистрируем Send CB
+        // для получения статуса переданного пакета 
+        esp_now_register_send_cb(OnDataSent);
+        // Регистрируем пир
+        esp_now_add_peer(MAC_2, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+        // Поочереди перебираем элементы массива в поисках нуля,
+        // если находим, отправляем весь объект с массивом на второй модуль
+        // и выходим из (цикла)процесса нахождения
+        for(int i = 0; i < 10; i++)
+        {
+          if(send_instance.to_second_point_packets_array[i] == 0)
+          {
+            Serial.printf("send_instance.to_second_point_packets_array[%d] = %d\n", 
+            i, send_instance.to_second_point_packets_array[i]);
+            send_instance.to_second_point_packets_array[i] = 1;
+            send_instance.processing_time[i] = millis(); // Засекаем время отправки
+            esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
+            Serial.printf("send_time = %d\n", send_instance.processing_time[i]);
+            last_send_time = millis();
+            save_array_condition();
+            break;
+          }
+          else if(send_instance.to_second_point_packets_array[i] == 2)
+          {
+            // Увеличиваем число принятых пакетов на 1 и считаем время приема
+            send_instance.received_packets_number++;
+            send_instance.processing_time[i] = millis() - send_instance.processing_time[i];
+            Serial.printf("\tsend_instance.to_second_point_packets_array[%d] = %d\n",
+            i, send_instance.to_second_point_packets_array[i]);
+            Serial.printf("\tsend_instance.processing_time[%d] = %dms\n", i, 
+            send_instance.processing_time[i]);
+            send_instance.to_second_point_packets_array[i] = 3;
+            save_array_condition();
+            if(i == 9) // если мы получили последний пакет из 10, то считаем кол-во
+            // отправленных и принятых
+            {
+              int sent_packets_count = 0; int received_packets_count = 0;
+              for(int i = 0; i < 10; i++)
+              {
+                if(send_instance.to_second_point_packets_array[i] == 1)
+                  sent_packets_count++;
+                else if(send_instance.to_second_point_packets_array[i] == 3)
+                  received_packets_count++;
+              }
+              Serial.printf("Sent, but not received packets count: %d/10\nReceived packets count: %d/10\n", 
+              sent_packets_count, received_packets_count);
+            }
+            break;
+          }
+        }
+      }
+    }
     if((millis() - last_send_time) >= interval)
     {
       // Инициализируем 1 модуль как отправляющий
@@ -125,6 +193,32 @@ void loop()
     esp_now_register_recv_cb(OnDataRecv);
   #endif // TRANSMIT
   #ifdef RECEIVE
+    // for(int i = 0; i < 10; i++)
+    // {
+    //   if(send_instance.to_second_point_packets_array[i] 
+    //   != send_instance.last_array_condition[i])
+    //   {
+    //     // Инициализируем 2 модуль как отправляющий
+    //   esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+    //   esp_now_register_send_cb(OnDataSent);
+    //   esp_now_add_peer(MAC_1, ESP_NOW_ROLE_SLAVE, 0, NULL, 1);
+    //   for(int i = 0; i < 10; i++)
+    //   {
+    //     // Перебираем принятый массив поочереди в поисках единички, если она
+    //     // есть, то отправляем объект с массивом на 1 модуль 
+    //     if(send_instance.to_second_point_packets_array[i] == 1)
+    //     {
+    //       Serial.printf("send_instance.to_second_point_packets_array[%d] = %d\n",
+    //       i, send_instance.to_second_point_packets_array[i]);
+    //       send_instance.to_second_point_packets_array[i] = 2;
+    //       esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
+    //       // 
+    //       save_array_condition();
+    //       break;
+    //     }
+    //   }
+    //   }
+    // }
     // Распараллелим задачу по периодической отправке массива двоек на 1 модуль
     if((millis() - last_send_time) >= interval)
     {
