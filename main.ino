@@ -67,138 +67,166 @@ void setup()
   #endif // RECEIVE || TRANSMIT
   #ifdef TRANSMIT
     delay(500);
+    Serial.println("Delay 500ms");
   #endif // TRANSMIT
 }
 void loop() 
 {
   #ifdef TRANSMIT
-    // Распараллеливание для отправки данных(отправляет массив единичек 
-    // на 2 модуль)
+    // Инициализируем 1 модуль как отправляющий
+    esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+    // Как только ESPNow инициализируется, мы зарегистрируем Send CB
+    // для получения статуса переданного пакета 
+    esp_now_register_send_cb(OnDataSent);
+    // Регистрируем пир
+    esp_now_add_peer(MAC_2, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+    // Поочереди перебираем элементы массива в поисках нуля,
+    // если находим, отправляем весь объект с массивом на второй модуль
+    // и выходим из (цикла)процесса нахождения
     for(int i = 0; i < 10; i++)
     {
-      if(send_instance.to_second_point_packets_array[i] != 
-      send_instance.last_array_condition[i])
+      if(send_instance.to_second_point_packets_array[i] == 0)
       {
-        // Инициализируем 1 модуль как отправляющий
-        esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
-        // Как только ESPNow инициализируется, мы зарегистрируем Send CB
-        // для получения статуса переданного пакета 
-        esp_now_register_send_cb(OnDataSent);
-        // Регистрируем пир
-        esp_now_add_peer(MAC_2, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
-        // Поочереди перебираем элементы массива в поисках нуля,
-        // если находим, отправляем весь объект с массивом на второй модуль
-        // и выходим из (цикла)процесса нахождения
-        for(int i = 0; i < 10; i++)
+        Serial.printf("send_instance.to_second_point_packets_array[%d] = %d\n", 
+        i, send_instance.to_second_point_packets_array[i]);
+        send_instance.to_second_point_packets_array[i] = 1;
+        send_instance.processing_time[i] = millis(); // Засекаем время отправки
+        esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
+        Serial.printf("send_time = %d\n", send_instance.processing_time[i]);
+        last_send_time = millis();
+        save_array_condition();
+        break;
+      }
+      else if(send_instance.to_second_point_packets_array[i] == 2)
+      {
+        // Увеличиваем число принятых пакетов на 1 и считаем время приема
+        send_instance.received_packets_number++;
+        send_instance.processing_time[i] = millis() - send_instance.processing_time[i];
+        Serial.printf("\tsend_instance.to_second_point_packets_array[%d] = %d\n",
+        i, send_instance.to_second_point_packets_array[i]);
+        Serial.printf("\tsend_instance.processing_time[%d] = %dms\n", i, 
+        send_instance.processing_time[i]);
+        send_instance.to_second_point_packets_array[i] = 3;
+        save_array_condition();
+        if(i == 9) // если мы получили последний пакет из 10, то считаем кол-во
+        // отправленных и принятых
         {
-          if(send_instance.to_second_point_packets_array[i] == 0)
+          int sent_packets_count = 0; int received_packets_count = 0;
+          for(int i = 0; i < 10; i++)
           {
-            Serial.printf("send_instance.to_second_point_packets_array[%d] = %d\n", 
-            i, send_instance.to_second_point_packets_array[i]);
-            send_instance.to_second_point_packets_array[i] = 1;
-            send_instance.processing_time[i] = millis(); // Засекаем время отправки
-            esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
-            Serial.printf("send_time = %d\n", send_instance.processing_time[i]);
-            last_send_time = millis();
-            save_array_condition();
-            break;
+            if(send_instance.to_second_point_packets_array[i] == 1)
+              sent_packets_count++;
+            else if(send_instance.to_second_point_packets_array[i] == 3)
+              received_packets_count++;
           }
-          else if(send_instance.to_second_point_packets_array[i] == 2)
-          {
-            // Увеличиваем число принятых пакетов на 1 и считаем время приема
-            send_instance.received_packets_number++;
-            send_instance.processing_time[i] = millis() - send_instance.processing_time[i];
-            Serial.printf("\tsend_instance.to_second_point_packets_array[%d] = %d\n",
-            i, send_instance.to_second_point_packets_array[i]);
-            Serial.printf("\tsend_instance.processing_time[%d] = %dms\n", i, 
-            send_instance.processing_time[i]);
-            send_instance.to_second_point_packets_array[i] = 3;
-            save_array_condition();
-            if(i == 9) // если мы получили последний пакет из 10, то считаем кол-во
-            // отправленных и принятых
-            {
-              int sent_packets_count = 0; int received_packets_count = 0;
-              for(int i = 0; i < 10; i++)
-              {
-                if(send_instance.to_second_point_packets_array[i] == 1)
-                  sent_packets_count++;
-                else if(send_instance.to_second_point_packets_array[i] == 3)
-                  received_packets_count++;
-              }
-              Serial.printf("Sent, but not received packets count: %d/10\nReceived packets count: %d/10\n", 
-              sent_packets_count, received_packets_count);
-            }
-            break;
-          }
+          Serial.printf("Sent, but not received packets count: %d/10\nReceived packets count: %d/10\n", 
+          sent_packets_count, received_packets_count);
         }
+        break;
       }
     }
-    if((millis() - last_send_time) >= interval)
-    {
-      // Инициализируем 1 модуль как отправляющий
-      esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
-      // Как только ESPNow инициализируется, мы зарегистрируем Send CB
-      // для получения статуса переданного пакета 
-      esp_now_register_send_cb(OnDataSent);
-      // Регистрируем пир
-      esp_now_add_peer(MAC_2, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
-      // Поочереди перебираем элементы массива в поисках нуля,
-      // если находим, отправляем весь объект с массивом на второй модуль
-      // и выходим из (цикла)процесса нахождения
-      for(int i = 0; i < 10; i++)
-      {
-        if(send_instance.to_second_point_packets_array[i] == 0)
-        {
-          Serial.printf("send_instance.to_second_point_packets_array[%d] = %d\n", 
-          i, send_instance.to_second_point_packets_array[i]);
-          send_instance.to_second_point_packets_array[i] = 1;
-          send_instance.processing_time[i] = millis(); // Засекаем время отправки
-          esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
-          Serial.printf("send_time = %d\n", send_instance.processing_time[i]);
-          last_send_time = millis();
-          break;
-        }
-        else if(send_instance.to_second_point_packets_array[i] == 2)
-        {
-          // Увеличиваем число принятых пакетов на 1 и считаем время приема
-          send_instance.received_packets_number++;
-          send_instance.processing_time[i] = millis() - send_instance.processing_time[i] 
-          - interval;
-          Serial.printf("\tsend_instance.to_second_point_packets_array[%d] = %d\n",
-          i, send_instance.to_second_point_packets_array[i]);
-          Serial.printf("\tsend_instance.processing_time[%d] = %dms\n", i, 
-          send_instance.processing_time[i]);
-          send_instance.to_second_point_packets_array[i] = 3;
-          if(i == 9) // если мы получили последний пакет из 10, то считаем кол-во
-          // отправленных и принятых
-          {
-            int sent_packets_count = 0; int received_packets_count = 0;
-            for(int i = 0; i < 10; i++)
-            {
-              if(send_instance.to_second_point_packets_array[i] == 1)
-                sent_packets_count++;
-              else if(send_instance.to_second_point_packets_array[i] == 3)
-                received_packets_count++;
-            }
-            Serial.printf("Sent, but not received packets count: %d/10\nReceived packets count: %d/10\n", 
-            sent_packets_count, received_packets_count);
-          }
-          break;
-        }
-      }
-    }
+    // if((millis() - last_send_time) >= interval)
+    // {
+    //   // Инициализируем 1 модуль как отправляющий
+    //   esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+    //   // Как только ESPNow инициализируется, мы зарегистрируем Send CB
+    //   // для получения статуса переданного пакета 
+    //   esp_now_register_send_cb(OnDataSent);
+    //   // Регистрируем пир
+    //   esp_now_add_peer(MAC_2, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+    //   // Поочереди перебираем элементы массива в поисках нуля,
+    //   // если находим, отправляем весь объект с массивом на второй модуль
+    //   // и выходим из (цикла)процесса нахождения
+    //   for(int i = 0; i < 10; i++)
+    //   {
+    //     if(send_instance.to_second_point_packets_array[i] == 0)
+    //     {
+    //       Serial.printf("send_instance.to_second_point_packets_array[%d] = %d\n", 
+    //       i, send_instance.to_second_point_packets_array[i]);
+    //       send_instance.to_second_point_packets_array[i] = 1;
+    //       send_instance.processing_time[i] = millis(); // Засекаем время отправки
+    //       esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
+    //       Serial.printf("send_time = %d\n", send_instance.processing_time[i]);
+    //       last_send_time = millis();
+    //       break;
+    //     }
+    //     else if(send_instance.to_second_point_packets_array[i] == 2)
+    //     {
+    //       // Увеличиваем число принятых пакетов на 1 и считаем время приема
+    //       send_instance.received_packets_number++;
+    //       send_instance.processing_time[i] = millis() - send_instance.processing_time[i] 
+    //       - interval;
+    //       Serial.printf("\tsend_instance.to_second_point_packets_array[%d] = %d\n",
+    //       i, send_instance.to_second_point_packets_array[i]);
+    //       Serial.printf("\tsend_instance.processing_time[%d] = %dms\n", i, 
+    //       send_instance.processing_time[i]);
+    //       send_instance.to_second_point_packets_array[i] = 3;
+    //       if(i == 9) // если мы получили последний пакет из 10, то считаем кол-во
+    //       // отправленных и принятых
+    //       {
+    //         int sent_packets_count = 0; int received_packets_count = 0;
+    //         for(int i = 0; i < 10; i++)
+    //         {
+    //           if(send_instance.to_second_point_packets_array[i] == 1)
+    //             sent_packets_count++;
+    //           else if(send_instance.to_second_point_packets_array[i] == 3)
+    //             received_packets_count++;
+    //         }
+    //         Serial.printf("Sent, but not received packets count: %d/10\nReceived packets count: %d/10\n", 
+    //         sent_packets_count, received_packets_count);
+    //       }
+    //       break;
+    //     }
+    //   }
+    // }
     // если в принятом массиве объекта находит 2, то фиксирует время 
     // и "выкидывает" в монитор данные об изменившейся переменной
-    esp_now_set_self_role(ESP_NOW_ROLE_SLAVE);
-    esp_now_register_recv_cb(OnDataRecv);
+    for(int i = 0; i < 10; i++)
+    {
+      if(send_instance.to_second_point_packets_array[i] == 3) 
+        continue;
+      else if (send_instance.to_second_point_packets_array[i] == 0)
+        break;
+      while(send_instance.to_second_point_packets_array[i] != 2)
+      {
+        esp_now_set_self_role(ESP_NOW_ROLE_SLAVE);
+        esp_now_register_recv_cb(OnDataRecv);
+        if(send_instance.to_second_point_packets_array[i] == 2)
+          break;
+      }
+    }
   #endif // TRANSMIT
   #ifdef RECEIVE
-    // for(int i = 0; i < 10; i++)
+    for(int i = 0; i < 10; i++)
+    {
+      if(send_instance.to_second_point_packets_array[i] 
+      != send_instance.last_array_condition[i])
+      {
+        // Инициализируем 2 модуль как отправляющий
+        esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+        esp_now_register_send_cb(OnDataSent);
+        esp_now_add_peer(MAC_1, ESP_NOW_ROLE_SLAVE, 0, NULL, 1);
+        for(int i = 0; i < 10; i++)
+        {
+          // Перебираем принятый массив поочереди в поисках единички, если она
+          // есть, то отправляем объект с массивом на 1 модуль 
+          if(send_instance.to_second_point_packets_array[i] == 1)
+          {
+            Serial.printf("send_instance.to_second_point_packets_array[%d] = %d\n",
+            i, send_instance.to_second_point_packets_array[i]);
+            send_instance.to_second_point_packets_array[i] = 2;
+            esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
+            // 
+            save_array_condition();
+            break;
+          }
+        }
+      }
+    }
+    // Распараллелим задачу по периодической отправке массива двоек на 1 модуль
+    // if((millis() - last_send_time) >= interval)
     // {
-    //   if(send_instance.to_second_point_packets_array[i] 
-    //   != send_instance.last_array_condition[i])
-    //   {
-    //     // Инициализируем 2 модуль как отправляющий
+    //   // Инициализируем 2 модуль как отправляющий
     //   esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
     //   esp_now_register_send_cb(OnDataSent);
     //   esp_now_add_peer(MAC_1, ESP_NOW_ROLE_SLAVE, 0, NULL, 1);
@@ -212,34 +240,10 @@ void loop()
     //       i, send_instance.to_second_point_packets_array[i]);
     //       send_instance.to_second_point_packets_array[i] = 2;
     //       esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
-    //       // 
-    //       save_array_condition();
     //       break;
     //     }
     //   }
-    //   }
     // }
-    // Распараллелим задачу по периодической отправке массива двоек на 1 модуль
-    if((millis() - last_send_time) >= interval)
-    {
-      // Инициализируем 2 модуль как отправляющий
-      esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
-      esp_now_register_send_cb(OnDataSent);
-      esp_now_add_peer(MAC_1, ESP_NOW_ROLE_SLAVE, 0, NULL, 1);
-      for(int i = 0; i < 10; i++)
-      {
-        // Перебираем принятый массив поочереди в поисках единички, если она
-        // есть, то отправляем объект с массивом на 1 модуль 
-        if(send_instance.to_second_point_packets_array[i] == 1)
-        {
-          Serial.printf("send_instance.to_second_point_packets_array[%d] = %d\n",
-          i, send_instance.to_second_point_packets_array[i]);
-          send_instance.to_second_point_packets_array[i] = 2;
-          esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
-          break;
-        }
-      }
-    }
     // Инициализируем 2 модуль как приемник и в свободное от отправки время
     // принимаем пакеты от 1 модуля 
     esp_now_set_self_role(ESP_NOW_ROLE_SLAVE);
