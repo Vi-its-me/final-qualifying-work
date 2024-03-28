@@ -1,11 +1,11 @@
 #include <ESP8266WiFi.h>
 #include <espnow.h>
-#include "signal_amount_method.h" //#include "time_count_method.h"
+#include "signal_amount_method.h"
 #define TRANSMIT // MAC || AMOUNT || RECEIVE || TRANSMIT
 
 #if defined RECEIVE || defined TRANSMIT
   //Переменные для обеспечения "распараллеливания" в loop()
-  int interval = 1000; // Интервал между отправкой и приемом(в конце его вычтем)
+  int interval = 15; // Интервал между отправкой и приемом(в конце его вычтем)
   int last_send_time = 0;
   // MAC-адреса плат
   uint8_t MAC_1[] = {0xC8, 0xC9, 0xA3, 0x5B, 0x96, 0x22};
@@ -17,6 +17,7 @@
     int to_second_point_packets_array[10] = {0,0,0,0,0,0,0,0,0,0};
     int received_packets_number = 0;
     int processing_time[10] = {0,0,0,0,0,0,0,0,0,0};
+    int what_now = 0;
   };
   sendClass send_instance;
   // sendClass sendClasses_array[1] = {send_instance};
@@ -57,7 +58,7 @@ void setup()
     }
   #endif // RECEIVE || TRANSMIT
   #ifdef TRANSMIT
-    delay(500);
+    delay(1000);
   #endif // TRANSMIT
 }
 void loop() 
@@ -81,6 +82,18 @@ void loop()
       {
         if(send_instance.to_second_point_packets_array[i] == 0)
         {
+          // если мы "попали" на 0, а перед ним есть 1 или 2, то мы вместо них
+          // записываем 4 (как не полученные)
+          for(int j = 0; j < i; j++)
+          {
+            if(send_instance.to_second_point_packets_array[j] == (1 || 2))
+            {
+              Serial.printf("\t\tin [%d] element we found %d before [%d] == 0\n", 
+              j, send_instance.to_second_point_packets_array[j], i);
+              send_instance.to_second_point_packets_array[j] = 4;
+              send_instance.processing_time[j] = 404;
+            }
+          }
           Serial.printf("send_instance.to_second_point_packets_array[%d] = %d\n", 
           i, send_instance.to_second_point_packets_array[i]);
           send_instance.to_second_point_packets_array[i] = 1;
@@ -92,10 +105,20 @@ void loop()
         }
         else if(send_instance.to_second_point_packets_array[i] == 2)
         {
+          // если в отправляемом массиве находим 1-ки до 2-ек, то 
+          // записываем вместо них 4
+          for(int j = 0; j < i; j++)
+          {
+            if(send_instance.to_second_point_packets_array[j] == 1)
+              {
+                send_instance.to_second_point_packets_array[j] = 4;
+                Serial.println("UNEXPECTED HAPPENED");
+              }
+          }
           // Увеличиваем число принятых пакетов на 1 и считаем время приема
           send_instance.received_packets_number++;
-          send_instance.processing_time[i] = millis() - send_instance.processing_time[i] 
-          - interval;
+          send_instance.processing_time[i] = millis() 
+          - send_instance.processing_time[i] - interval;
           Serial.printf("\tsend_instance.to_second_point_packets_array[%d] = %d\n",
           i, send_instance.to_second_point_packets_array[i]);
           Serial.printf("\tsend_instance.processing_time[%d] = %dms\n", i, 
@@ -107,13 +130,22 @@ void loop()
             int sent_packets_count = 0; int received_packets_count = 0;
             for(int i = 0; i < 10; i++)
             {
-              if(send_instance.to_second_point_packets_array[i] == 1)
+              if(send_instance.to_second_point_packets_array[i] == 4)
                 sent_packets_count++;
               else if(send_instance.to_second_point_packets_array[i] == 3)
                 received_packets_count++;
             }
             Serial.printf("Sent, but not received packets count: %d/10\nReceived packets count: %d/10\n", 
             sent_packets_count, received_packets_count);
+            // Выводим массив с данными и их временем получения в консоль
+            for(int i = 0; i < 10; i++)
+            {
+              if(!i)  Serial.println("______________________________________________");
+              Serial.printf("\nsend_instance.to_second_point_packets_array[%d] = %d",
+              i, send_instance.to_second_point_packets_array[i]);
+              Serial.printf("\n\tsend_instance.processing_time[%d] = %dms", i,
+              send_instance.processing_time[i]);
+            }
           }
           break;
         }
