@@ -5,7 +5,9 @@
 
 #if defined RECEIVE || defined TRANSMIT
   //Переменные для обеспечения "распараллеливания" в loop()
-  int interval = 15; // Интервал между отправкой и приемом(в конце его вычтем)
+  int interval = 0; // Интервал между отправкой и приемом(в конце его вычтем)
+  int delay_time = 500; // Интервал, установленный после отправки(чтобы 1 модуль
+                        // успел принять данные)
   int last_send_time = 0;
   // MAC-адреса плат
   uint8_t MAC_1[] = {0xC8, 0xC9, 0xA3, 0x5B, 0x96, 0x22};
@@ -16,7 +18,6 @@
   public:
     int to_second_point_packets_array[10] = {0,0,0,0,0,0,0,0,0,0};
     int processing_time[10] = {0,0,0,0,0,0,0,0,0,0};
-    int what_now = 0;
   };
   sendClass send_instance;
   // sendClass sendClasses_array[1] = {send_instance};
@@ -98,6 +99,7 @@ void loop()
           send_instance.to_second_point_packets_array[i] = 1;
           send_instance.processing_time[i] = millis(); // Засекаем время отправки
           esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
+          delay(delay_time); // Оставляем время, чтобы модуль 1 успел отправить
           Serial.printf("send_time = %d\n", send_instance.processing_time[i]);
           last_send_time = millis();
           break;
@@ -116,12 +118,14 @@ void loop()
           }
           Serial.printf("\tsend_instance.to_second_point_packets_array[%d] = %d\n",
           i, send_instance.to_second_point_packets_array[i]);
-          // выводим в консоль каждый этап подсчетов для отладки
-          Serial.printf("\tsend_instance.processing_time[%d] = millis() - send_instance.pocessing_time[%d] - interval = %d - %d - %d = %dms\n", 
-          i, i, millis(), send_instance.processing_time[i], interval, millis() - send_instance.processing_time[i] - interval);
-          // считаем результат и теперь записываем его
+          // Сохраняем время отправки для вывода актуальных значений времени отправки
+          int send_time = send_instance.processing_time[i];
+          // Подсчитываем время
           send_instance.processing_time[i] = millis() 
-          - send_instance.processing_time[i] - interval;
+          - send_instance.processing_time[i] - interval - delay_time;
+          // выводим в консоль каждый этап подсчетов для отладки
+          Serial.printf("\tsend_instance.processing_time[%d] = millis() - send_time - interval - delay_time = %d - %d - %d - %d = %dms\n", 
+          i, millis(), send_time, interval, delay_time, millis() - send_time - interval - delay_time);
           send_instance.to_second_point_packets_array[i] = 3;
           if(i == 9) // если мы получили последний пакет из 10, то считаем кол-во
           // отправленных и принятых
