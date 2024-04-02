@@ -5,10 +5,11 @@
 
 #if defined RECEIVE || defined TRANSMIT
   //Переменные для обеспечения "распараллеливания" в loop()
-  int interval = 0; // Интервал между отправкой и приемом(в конце его вычтем)
-  int delay_time = 500; // Интервал, установленный после отправки(чтобы 1 модуль
-                        // успел принять данные)
+  int interval = 0; // (ms)Интервал между отправкой и приемом(в конце его вычтем)
+  int delay_time = 500; // (ms)Интервал, установленный после отправки
+                      // (чтобы 1 модуль успел принять данные)
   int last_send_time = 0;
+  bool is_result_printed = false;//Для предотвращения бесконечной печати результата
   // MAC-адреса плат
   uint8_t MAC_1[] = {0xC8, 0xC9, 0xA3, 0x5B, 0x96, 0x22};
   uint8_t MAC_2[] = {0xE8, 0xDB, 0x84, 0xBB, 0xE8, 0x3B};//Where to send-2
@@ -97,10 +98,10 @@ void loop()
           Serial.printf("send_instance.to_second_point_packets_array[%d] = %d\n", 
           i, send_instance.to_second_point_packets_array[i]);
           send_instance.to_second_point_packets_array[i] = 1;
-          send_instance.processing_time[i] = millis(); // Засекаем время отправки
+          send_instance.processing_time[i] = micros(); // Засекаем время отправки
           esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
           delay(delay_time); // Оставляем время, чтобы модуль 1 успел отправить
-          Serial.printf("send_time = %d\n", send_instance.processing_time[i]);
+          Serial.printf("send_time = %dµs\n", send_instance.processing_time[i]);
           last_send_time = millis();
           break;
         }
@@ -121,36 +122,37 @@ void loop()
           // Сохраняем время отправки для вывода актуальных значений времени отправки
           int send_time = send_instance.processing_time[i];
           // Подсчитываем время
-          send_instance.processing_time[i] = millis() 
-          - send_instance.processing_time[i] - interval - delay_time;
+          send_instance.processing_time[i] = micros() 
+          - send_instance.processing_time[i] - (interval + delay_time) * 1000;
           // выводим в консоль каждый этап подсчетов для отладки
-          Serial.printf("\tsend_instance.processing_time[%d] = millis() - send_time - interval - delay_time = %d - %d - %d - %d = %dms\n", 
-          i, millis(), send_time, interval, delay_time, millis() - send_time - interval - delay_time);
+          Serial.printf("\tsend_instance.processing_time[%d] = micros() - send_time - interval - delay_time = %dµs - %dµs - %dµs - %dµs = %dµs\n", 
+          i, micros(), send_time, interval * 1000, delay_time * 1000, micros() - send_time - (interval + delay_time) * 1000);
           send_instance.to_second_point_packets_array[i] = 3;
-          if(i == 9) // если мы получили последний пакет из 10, то считаем кол-во
-          // отправленных и принятых
-          {
-            int sent_packets_count = 0; int received_packets_count = 0;
-            for(int i = 0; i < 10; i++)
-            {
-              if(send_instance.to_second_point_packets_array[i] == 4)
-                sent_packets_count++;
-              else if(send_instance.to_second_point_packets_array[i] == 3)
-                received_packets_count++;
-            }
-            Serial.printf("Sent, but not received packets count: %d/10\nReceived packets count: %d/10\n", 
-            sent_packets_count, received_packets_count);
-            // Выводим массив с данными и их временем получения в консоль
-            for(int i = 0; i < 10; i++)
-            {
-              if(!i)  Serial.println("______________________________________________");
-              Serial.printf("\nsend_instance.to_second_point_packets_array[%d] = %d",
-              i, send_instance.to_second_point_packets_array[i]);
-              Serial.printf("\n\tsend_instance.processing_time[%d] = %dms", i,
-              send_instance.processing_time[i]);
-            }
-          }
           break;
+        }
+        // если мы получили последний пакет, то считаем к-во отправ. и принятых
+        else if(i == 9 && !is_result_printed)
+        {
+          int sent_packets_count = 0; int received_packets_count = 0;
+          for(int i = 0; i < 10; i++)
+          {
+            if(send_instance.to_second_point_packets_array[i] == 4)
+              sent_packets_count++;
+            else if(send_instance.to_second_point_packets_array[i] == 3)
+              received_packets_count++;
+          }
+          Serial.printf("Sent, but not received packets count: %d/10\nReceived packets count: %d/10\n", 
+          sent_packets_count, received_packets_count);
+          // Выводим массив с данными и их временем получения в консоль
+          for(int i = 0; i < 10; i++)
+          {
+            if(!i) Serial.println("______________________________________________");
+            Serial.printf("\nsend_instance.to_second_point_packets_array[%d] = %d",
+            i, send_instance.to_second_point_packets_array[i]);
+            Serial.printf("\n\tsend_instance.processing_time[%d] = %dµs", i,
+            send_instance.processing_time[i]);
+          }
+          is_result_printed = true;
         }
       }
     }
