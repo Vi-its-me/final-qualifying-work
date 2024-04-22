@@ -152,6 +152,7 @@ void loop()
             Serial.printf("\n\tsend_instance.processing_time[%d] = %dµs", i,
             send_instance.processing_time[i]);
           }
+          Serial.printf("\nend\n");
           is_result_printed = true;
         }
       }
