@@ -1,5 +1,6 @@
 import serial
 import time
+# from openpyxl import Workbook
 print_condition_flag = False
 serial_object = serial.Serial()
 port_number = 5
@@ -14,18 +15,21 @@ while not serial_object.is_open:
         print(".", end="")
         time.sleep(1)
 print("\nOpened!")
+# workbook = Workbook()
 try:
     while True:
         serial_string = serial_object.readline().decode()
         if serial_string == "end\n":
             break   # Переносом строки может стать ""\r\n"!
-        string_to_column = "" # объявляем
+        previous_iterator = 0
+        iterator = 0
+        if iterator:
+            previous_iterator = iterator
         for char in serial_string:
             if char == "\t" or char == "\n":
-                print(string_to_column + "\t|\t", end="")
-                string_to_column = "" # обнуляем
-                continue
-            string_to_column += char
+                print(serial_string[previous_iterator:iterator] + "\t|\t", end="")
+                previous_iterator = iterator + 1
+            iterator += 1
         print(end="\n")
 except serial.SerialException:
     print(f"Nothing got from COM{port_number}")
