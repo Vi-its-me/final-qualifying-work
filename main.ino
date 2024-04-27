@@ -4,6 +4,7 @@
 #define TRANSMIT // MAC || AMOUNT || RECEIVE || TRANSMIT
 
 #if defined RECEIVE || defined TRANSMIT
+  int signal_amount_array[10] = {0,0,0,0,0,0,0,0,0,0};
   //Переменные для обеспечения "распараллеливания" в loop()
   int interval = 0; // (ms)Интервал между отправкой и приемом(в конце его вычтем)
   int delay_time = 500; // (ms)Интервал, установленный после отправки
@@ -21,46 +22,40 @@
     int processing_time[10] = {0,0,0,0,0,0,0,0,0,0};
   };
   sendClass send_instance;
-  // sendClass sendClasses_array[1] = {send_instance};
   // Функция для обратной связи, отправлено ли сообщение
-  void OnDataSent (uint8_t *mac_address, uint8_t sendStatus)
-  {
-    Serial.print("(Last packet send status: ");
-    if (sendStatus == 0) 
-      Serial.println("sent)");
-    else Serial.println("not sent)");
-  }
+  void OnDataSent (uint8_t *mac_address, uint8_t sendStatus) {}
   void OnDataRecv(uint8_t *mac_address, uint8_t *incomingData, uint8_t length)
   {
     // Функция стандартной библиотеки C, копирующая содержимое одной области
     // памяти в другую 
     memcpy(&send_instance, incomingData, sizeof(send_instance));
-    // sendClasses_array[0].id = send_instance.id;
   }
 #endif // RECEIVE || TRANSMIT
 void setup()
 {
   Serial.begin(115200);
-  #ifdef MAC
-    delay(1000);
-    Serial.print("Board MAC-address:\t"); Serial.println(WiFi.macAddress());
-  #endif // MAC
   #ifdef AMOUNT
     signal_amount();
   #endif // AMOUNT
-  #if defined RECEIVE || defined TRANSMIT
+  #if defined TRANSMIT || defined RECEIVE
     // Инициализируем модули приема-передачи
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
     if (esp_now_init() != 0)
     {
-      Serial.println("ESP-NOW initialization error");
+      // Serial.println("ESP-NOW initialization error");
       return;
     }
-  #endif // RECEIVE || TRANSMIT
-  #ifdef TRANSMIT
+  #endif // TRANSMIT || RECEIVE
+  #ifdef RECEIVE
+    WiFi.softAP("NodeMCU");
+  #endif // RECEIVE
+  #if defined TRANSMIT || defined MAC
     delay(1000);
-  #endif // TRANSMIT
+  #endif // TRANSMIT || MAC
+  #ifdef MAC
+    Serial.print("Board MAC-address:\t"); Serial.println(WiFi.macAddress());
+  #endif // MAC
 }
 void loop() 
 {
@@ -89,19 +84,16 @@ void loop()
           {
             if(send_instance.to_second_point_packets_array[j] == (1 || 2))
             {
-              Serial.printf("\t\tin [%d] element we found %d before [%d] == 0\n", 
-              j, send_instance.to_second_point_packets_array[j], i);
               send_instance.to_second_point_packets_array[j] = 4;
               send_instance.processing_time[j] = 404;
             }
           }
-          Serial.printf("send_instance.to_second_point_packets_array[%d] = %d\n", 
-          i, send_instance.to_second_point_packets_array[i]);
           send_instance.to_second_point_packets_array[i] = 1;
+          // Ищем точку доступа по имени и записываем уровень её сигнала
+          signal_amount_array[i] = get_signal_amount("NodeMCU");
           send_instance.processing_time[i] = micros(); // Засекаем время отправки
           esp_now_send(0, (uint8_t *) &send_instance, sizeof(send_instance));
           delay(delay_time); // Оставляем время, чтобы модуль 1 успел отправить
-          Serial.printf("send_time = %dµs\n", send_instance.processing_time[i]);
           last_send_time = millis();
           break;
         }
@@ -114,19 +106,12 @@ void loop()
             if(send_instance.to_second_point_packets_array[j] == 1)
               {
                 send_instance.to_second_point_packets_array[j] = 4;
-                Serial.println("UNEXPECTED HAPPENED");
               }
           }
-          Serial.printf("\tsend_instance.to_second_point_packets_array[%d] = %d\n",
-          i, send_instance.to_second_point_packets_array[i]);
-          // Сохраняем время отправки для вывода актуальных значений времени отправки
-          int send_time = send_instance.processing_time[i];
-          // Подсчитываем время
+          // Подсчитываем и фиксируем время принятия
           send_instance.processing_time[i] = micros() 
           - send_instance.processing_time[i] - (interval + delay_time) * 1000;
-          // выводим в консоль каждый этап подсчетов для отладки
-          Serial.printf("\tsend_instance.processing_time[%d] = micros() - send_time - interval - delay_time = %dµs - %dµs - %dµs - %dµs = %dµs\n", 
-          i, micros(), send_time, interval * 1000, delay_time * 1000, micros() - send_time - (interval + delay_time) * 1000);
+          // Фиксируем факт принятия данных
           send_instance.to_second_point_packets_array[i] = 3;
           break;
         }
@@ -141,18 +126,13 @@ void loop()
             else if(send_instance.to_second_point_packets_array[i] == 3)
               received_packets_count++;
           }
-          Serial.printf("Sent, but not received packets count: %d/10\nReceived packets count: %d/10\n", 
-          sent_packets_count, received_packets_count);
-          // Выводим массив с данными и их временем получения в консоль
+          // Выводим массив с данными и их временем получения в порт Serial
+          Serial.printf("begin\n");
           for(int i = 0; i < 10; i++)
           {
-            if(!i) Serial.println("______________________________________________");
-            Serial.printf("\nsend_instance.to_second_point_packets_array[%d] = %d",
-            i, send_instance.to_second_point_packets_array[i]);
-            Serial.printf("\n\tsend_instance.processing_time[%d] = %dµs", i,
-            send_instance.processing_time[i]);
+            Serial.printf("%d\t%d\t%d\n", i + 1, signal_amount_array[i], send_instance.processing_time[i]);
           }
-          Serial.printf("\nend\n");
+          Serial.printf("end\n");
           is_result_printed = true;
         }
       }

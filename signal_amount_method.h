@@ -1,3 +1,6 @@
+String access_point_name = "NodeMCU #2";
+bool is_found = false;
+
 void signal_amount()
 {
   Serial.begin(115200);
@@ -6,11 +9,10 @@ void signal_amount()
   int counter = 1; 
   while (counter < 11)
   {
-    bool is_found = false;
     int scanResult = WiFi.scanNetworks();
     for (int i = 0; i < scanResult; i++)
     {
-      if (WiFi.SSID(i) == "realme C30")
+      if (WiFi.SSID(i) == access_point_name)
       { 
         Serial.printf("Take %d| \tSignal amount of \"%s\" = %ddB\mW", counter, 
         WiFi.SSID(i), WiFi.RSSI(i));
@@ -19,7 +21,18 @@ void signal_amount()
       }
     }
     if (!is_found)
-      Serial.print("\"realme C30\" is not found");
+      Serial.printf("%s is not found", access_point_name);
     Serial.printf("\n");
   }
+}
+
+int get_signal_amount(String access_point)
+{
+  int scanResult = WiFi.scanNetworks();
+  for(int j = 0; j < scanResult; j++)
+  {
+    if(WiFi.SSID(j) == access_point)
+      return WiFi.RSSI(j);
+  }
+  return NULL;
 }
