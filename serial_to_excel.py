@@ -1,6 +1,7 @@
 import serial
 import time
 from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 
 got_begin = False
 workbook = Workbook()
@@ -16,10 +17,10 @@ class Did_not_begin(Exception):     # "стартовую" строку
         self.txt = text
 # функция для печати в таблицу, начиная с первой её строки
 def print_to_spreadsheet(row, list):
-    column = 1
-    for element in list:
-        worksheet.cell(row=row, column=column, value=element)
-        column += 1
+    for index, element in enumerate(list, 1):
+        if isinstance(element, str):
+            worksheet.column_dimensions[get_column_letter(index)].width = len(element) + 1
+        worksheet.cell(row=row, column=index, value=element)
 def find_empty_row(worksheet, column_letter = 'A'):
     row_number = 1
     while row_number != 30:
@@ -29,7 +30,7 @@ def find_empty_row(worksheet, column_letter = 'A'):
 def find_average(column_number):
     count = 0
     total = 0
-    for row_number in range(2, 11):
+    for row_number in range(2, 12):
         if worksheet.cell(row=row_number, column=column_number).value is None:
             continue
         elif worksheet.cell(row=row_number, column=column_number).value == "404":
@@ -37,6 +38,18 @@ def find_average(column_number):
         total += int(worksheet.cell(row=row_number, column=column_number).value)
         count += 1
     return total / count
+def determine_and_insert_distance(signal_amount_column, distance_column):
+    for current_row in range(2, 12):
+        if int(worksheet.cell(row=current_row, column=signal_amount_column).value) >= -50:
+            distance = (abs(int(worksheet.cell(row=current_row, column=signal_amount_column).value)) + (-10.09)) / 43.893
+            worksheet.cell(row=current_row, column=distance_column).value = distance
+        elif int(worksheet.cell(row=current_row, column=signal_amount_column).value) < -50:
+            distance = abs((abs(int(worksheet.cell(row=current_row, column=signal_amount_column).value)) + (-54.698)) / 0.457)
+            worksheet.cell(row=current_row, column=distance_column).value = distance
+def merge_cells_and_insert(column_number, to_insert):
+    row_number = 2
+    worksheet.merge_cells(start_row=row_number, end_row=row_number + 9, start_column=column_number, end_column=column_number)
+    worksheet.cell(row=row_number, column=column_number).value = to_insert
 # Попытка открыть порт, пока тот не будет открыт
 while not serial_object.is_open:
     try:
@@ -50,7 +63,7 @@ while not serial_object.is_open:
         time.sleep(1)
 print("Port opened")
 # заполнить первую строку называниями столбцов
-print_list = ["№ Замера", "Уровень сигнала", "Время прохождения сигнала", "Расстояние от уровня сигнала", "Расстояние от времени прохождения сигнала", "Усредненное значение расстояния", "Фактическое расстояние"]
+print_list = ["№ Замера", "Уровень сигнала", "Время прохождения сигнала", "Расстояние от уровня сигнала", "Усредненное значение расстояния", "Фактическое расстояние"]
 print_to_spreadsheet(1, print_list)
 # Заполнить таблицу данными, полученными от NodeMCU
 worksheet_row = 2
@@ -78,11 +91,18 @@ try:
             begin_found_flag = True
     # Подсчитать среднее значение в столбцах и напечатать
     print_to_spreadsheet(find_empty_row(worksheet), ["Среднее арифметическое:", find_average(2), find_average(3)])
+    # Подсчитать среднее значение в каждой строке и напечатать
+    determine_and_insert_distance(2, 4)
+    # Объединить все строки в заданном столбце и подсчитать моду всех значений
+    merge_cells_and_insert(5, "=MODE(ROUND(D2:D11, 2))")
 except Did_not_begin as how:
     print(how)
 except serial.SerialException:
     print(f"Nothing got from COM{port_number}")
 else:
-    workbook.save(input("Enter the distance in meters: ") + "m" + ".xlsx")
+    actual_distance = input("Enter actual distance in meters: ")
+    # В последнем столбце объединяем все строки и помещаем значение фактического расстояния
+    merge_cells_and_insert(6, actual_distance)
+    workbook.save(actual_distance + "m" + ".xlsx")
 finally:
     serial_object.close()
