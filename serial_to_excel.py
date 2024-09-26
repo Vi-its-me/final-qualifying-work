@@ -4,13 +4,13 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Border, Side
 
-got_begin = False
+got_begin = False # Не используется, проверить и удалить
 workbook = Workbook()
 worksheet = workbook.active
 print_condition_flag = False
 serial_object = serial.Serial()
 port_number = 5
-receiving_terminated = False
+receiving_terminated = False # Не используется
 begin_found_flag = False
 # Исключение для вызова в случае, если не получили
 class Did_not_begin(Exception):     # "стартовую" строку
@@ -114,7 +114,7 @@ while not serial_object.is_open:
             print(".", end="")
         time.sleep(1)
 print("Port opened")
-# Заполнение первой строки называниями столбцов
+# Заполнение первой строки названиями столбцов
 print_list = ["№ замера", "Уровень сигнала(dBm)",
 "Время прохождения сигнала(μs)",
 "Расстояние от уровня сигнала(m)","Модальное значение(m)",
